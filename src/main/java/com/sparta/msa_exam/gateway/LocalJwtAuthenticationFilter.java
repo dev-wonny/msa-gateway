@@ -31,17 +31,19 @@ public class LocalJwtAuthenticationFilter implements GlobalFilter {
 	@Override
 	public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
 		final String path = exchange.getRequest().getURI().getPath();
-		if (path.equals("/auth/signIn")) {
+		if (path.equals("/auth/signIn") || path.equals("/auth/signUp")) {
+			/*
 			if (!validateUserId(exchange)) {
 				exchange.getResponse().setStatusCode(HttpStatus.BAD_REQUEST);
 				return exchange.getResponse().setComplete();//응답 본문을 작성할 필요가 없고, 단순히 상태 코드만 설정하여 응답을 종료
 			}
-			return chain.filter(exchange);  // /signIn 경로는 필터를 적용하지 않음
+			 */
+			return chain.filter(exchange);  // /auth 경로는 필터를 적용하지 않음
 		}
 
 		final Optional<String> tokenOpt = extractToken(exchange);
 
-		if (tokenOpt.isEmpty() || !validateToken(tokenOpt)) {
+		if (tokenOpt.isEmpty() || !validateToken(tokenOpt, exchange)) {
 			exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
 			return exchange.getResponse().setComplete();
 		}
@@ -63,7 +65,7 @@ public class LocalJwtAuthenticationFilter implements GlobalFilter {
 		return userId != null && !userId.isEmpty();
 	}
 
-	private boolean validateToken(Optional<String> tokenOpt) {
+	private boolean validateToken(Optional<String> tokenOpt, ServerWebExchange exchange) {
 		if (tokenOpt.isPresent()) {
 			try {
 				final SecretKey key = Keys.hmacShaKeyFor(Decoders.BASE64URL.decode(secretKey));
@@ -72,7 +74,14 @@ public class LocalJwtAuthenticationFilter implements GlobalFilter {
 						.build().parseSignedClaims(tokenOpt.get());
 				log.info("#####payload :: " + claimsJws.getPayload().toString());
 
+				Claims claims = claimsJws.getBody();
+				// gateway에서 다른 서비스로 헤더로 데이터 보냄
+				exchange.getRequest().mutate()
+						.header("X-User-Id", claims.get("user_id").toString())
+						.header("X-Role", claims.get("role").toString())
+						.build();
 				// 추가적인 검증 로직 (예: 토큰 만료 여부 확인 등)을 여기에 추가할 수 있습니다.
+
 				return true;
 			} catch (Exception e) {
 				log.error("Token validation failed", e);
